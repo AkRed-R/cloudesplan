@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+sqlalchemy
+sentence-transformers
+pydantic
+python-dotenv
