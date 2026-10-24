@@ -1,2 +1,5 @@
 # cloudesplan
-clodes plan hackathon için repository
+Commit durumu: ilk kommit
+
+## ayrıntılar
+.
