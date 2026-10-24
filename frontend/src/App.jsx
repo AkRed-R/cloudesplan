@@ -15,30 +15,30 @@ export default function App() {
 
   return (
     // Arka plan rengi HTML'den alındı (#f8f9fa) ve Open Sans fontu eklendi
-    <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: '#feedde', fontFamily: '"Open Sans", sans-serif' }}>
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: '#f9cd92', fontFamily: '"Open Sans", sans-serif' }}>
       
       {/* İlk tasarımdaki Squircle Konteyner */}
       <div className="bg-white rounded-[3rem] shadow-[0_24px_48px_rgba(0,0,0,0.12)] p-10 w-full max-w-md flex flex-col items-center">
         
         {/* Logo Alanı (Yuvarlak ve Yazısız) */}
-        <div className="w-24 h-24 rounded-full flex items-center justify-center shadow-md mb-6 overflow-hidden border-2" style={{ borderColor: '#e9ecef' }}>
+        <div className="w-24 h-24 rounded-full flex items-center justify-center shadow-md mb-6 overflow-hidden border-2" style={{ borderColor: '#1a1436' }}>
            <img src="https://obs.gtu.edu.tr/gen_imgs/uni_logo.gif" alt="GTÜ Logo" className="w-full h-full object-cover" />
         </div>
 
         {/* Başlık (HTML'deki --ink rengi kullanıldı) */}
-        <h1 className="text-3xl font-bold mb-2 tracking-tight" style={{ color: '#14181c' }}>GTÜ'nün Kulağı</h1>
+        <h1 className="text-3xl font-bold mb-2 tracking-tight" style={{ color: '#feedde' }}>GTÜ'nün Kulağı</h1>
 
         {/* Çizgiler Arasındaki Yazı (HTML'deki --ink-soft ve --sep renkleri) */}
         <div className="flex items-center w-full my-5">
           <div className="flex-grow border-t-2" style={{ borderColor: '#dee2e6' }}></div>
-          <span className="px-4 text-xs font-semibold uppercase tracking-widest text-center" style={{ color: '#5B636A' }}>
+          <span className="px-4 text-xs font-semibold uppercase tracking-widest text-center" style={{ color: '#feedde' }}>
             Herkes İçin Geribildirim Sistemi
           </span>
           <div className="flex-grow border-t-2" style={{ borderColor: '#dee2e6' }}></div>
         </div>
 
         {/* Normal Yazı */}
-        <p className="font-medium mb-8 text-sm" style={{ color: '#14181c' }}>
+        <p className="font-medium mb-8 text-sm" style={{ color: '#feedde' }}>
           Söyleyecek bir şeyin mi var?
         </p>
 
