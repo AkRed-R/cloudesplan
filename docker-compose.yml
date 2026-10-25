@@ -6,6 +6,7 @@ services:
     env_file: 
       - path: .env 
         required: false 
+    shm_size: '6gb'
     restart: unless-stopped 
     volumes:
       - ./backend:/app # Kodu kaydettikce guncellemesi icin

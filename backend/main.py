@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer, util
 import sqlite3
@@ -10,6 +11,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = FastAPI(title="EAR OF GTU API")
+
+# CORS İZNİNİ EKLEYİN (Frontend istek atabilsin diye)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Hackathon için tüm kökenlere izin veriyoruz
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # YAPAY ZEKÂ MODELİ YÜKLENİYOR
 print("Yapay Zeka modeli yükleniyor... Bu işlem birkaç saniye sürebilir.")
