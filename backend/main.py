@@ -6,18 +6,18 @@ import json
 import os
 from dotenv import load_dotenv
 
-# .env dosyasındaki gizli şifreleri yükle
+# .env dosyasındaki gizli şifreleri ve bilgileri yükle
 load_dotenv()
 
 app = FastAPI(title="EAR OF GTU API")
 
 # YAPAY ZEKÂ MODELİ YÜKLENİYOR
-# Bu işlem uygulama ilk ayağa kalkarken çalışır ve CPU'da çalışan küçük modeli (all-MiniLM-L6-v2) indirir.
 print("Yapay Zeka modeli yükleniyor... Bu işlem birkaç saniye sürebilir.")
 model = SentenceTransformer('all-MiniLM-L6-v2')
 print("Model başarıyla yüklendi!")
 
-# Veritabanı Bağlantısı Ayarları
+# ----------------- VERİTABANI BAĞLANTISI VE KURULUMU -----------------
+
 def get_db():
     conn = sqlite3.connect("ear_of_gtu.db", check_same_thread=False)
     conn.row_factory = sqlite3.Row
@@ -26,73 +26,111 @@ def get_db():
     finally:
         conn.close()
 
-# Veritabanı Tablolarını Oluşturma
 def init_db():
     conn = sqlite3.connect("ear_of_gtu.db")
     c = conn.cursor()
+    
+    # KULLANICILAR Tablosu
+    c.execute('''CREATE TABLE IF NOT EXISTS users
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                  email TEXT UNIQUE,
+                  password TEXT,
+                  role TEXT,
+                  banned_until DATETIME)''')
+
+    # GÖNDERİLER Tablosu - (Eksik veya hatalı tabloyu önlemek için)
     c.execute('''CREATE TABLE IF NOT EXISTS posts
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   category TEXT, 
                   title TEXT, 
                   content TEXT, 
                   embedding TEXT,
-                  clone_of INTEGER,
+                  clone_group_id INTEGER,
+                  status TEXT DEFAULT 'Bekleniyor',
+                  upvotes INTEGER DEFAULT 0,
+                  created_at DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS ideas
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                  post_id INTEGER,
+                  content TEXT,
                   upvotes INTEGER DEFAULT 0)''')
+
     conn.commit()
     conn.close()
 
-# Uygulama başlarken tabloları hazırla
 init_db()
 
-# Dışarıdan gelecek veri yapısı (Öğrenci Postu)
+# ----------------- VERİ MODELLERİ -----------------
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
 class PostCreate(BaseModel):
     category: str
     title: str
     content: str
 
+# ----------------- API UÇ NOKTALARI -----------------
+
+@app.post("/api/login")
+def login(req: LoginRequest, db: sqlite3.Connection = Depends(get_db)):
+    admin_email = os.getenv("ADMIN_EMAIL")
+    admin_password = os.getenv("ADMIN_PASSWORD")
+    
+    if req.email == admin_email and req.password == admin_password:
+        return {"message": "Admin girişi başarılı", "role": "Admin", "email": req.email}
+    
+    if req.email == "ogrenci@gtu.edu.tr" and req.password == "123456":
+         return {"message": "Öğrenci girişi başarılı", "role": "Ogrenci", "email": req.email}
+
+    raise HTTPException(status_code=401, detail="E-posta veya şifre hatalı!")
+
+
 @app.post("/api/posts")
 def create_post(post: PostCreate, db: sqlite3.Connection = Depends(get_db)):
-    # 1. YENİ POSTUN ANLAMINI ÇIKAR (EMBEDDING)
-    # Yapay zeka yazıyı matematiksel bir diziye (vektöre) çeviriyor
+    # 1. YENİ POSTUN ANLAMINI ÇIKAR
     new_embedding = model.encode(post.title + " " + post.content)
     new_emb_list = new_embedding.tolist()
     
-    # 2. MEVCUT POSTLARI GETİR (Klon kontrolü için)
     cursor = db.cursor()
-    # Sadece orijinal postları (clone_of IS NULL) getiriyoruz ki klonun klonunu yapmayalım
-    cursor.execute("SELECT id, embedding FROM posts WHERE clone_of IS NULL")
+    
+    # 2. MEVCUT POSTLARI GETİR
+    # "embedding IS NOT NULL" şartı eklendi ki boş olanlarda çökmesin
+    cursor.execute("SELECT id, clone_group_id, embedding FROM posts WHERE clone_group_id IS NOT NULL AND embedding IS NOT NULL")
     existing_posts = cursor.fetchall()
     
-    clone_of_id = None
+    assigned_group_id = None
     
-    # 3. YAPAY ZEKA İLE ANLAMSAL BENZERLİK HESAPLAMA
+    # 3. YAPAY ZEKA İLE BENZERLİK HESAPLAMA (Güvenli hale getirildi)
     for ep in existing_posts:
-        ep_id = ep["id"]
-        ep_emb = json.loads(ep["embedding"])
-        
-        # İki metin arasındaki anlamsal benzerlik skoru (0 ile 1 arası bir değer üretir)
-        similarity = util.cos_sim(new_embedding, ep_emb).item()
-        
-        # Eğer benzerlik %80'den fazlaysa, bu kesinlikle aynı konudur (KLON)
-        if similarity > 0.80: 
-            clone_of_id = ep_id
-            break # İlk bulduğu orijinal postun klonu yapar ve aramayı bitirir
+        try:
+            ep_emb = json.loads(ep["embedding"])
+            similarity = util.cos_sim(new_embedding, ep_emb).item()
             
-    # 4. VERİTABANINA KAYDET
+            if similarity > 0.65: 
+                assigned_group_id = ep["clone_group_id"]
+                break 
+        except Exception as e:
+            print(f"Post ID {ep['id']} vektör analizi hatası atlandı:", e)
+            continue
+            
+    # 4. KAYDET
     cursor.execute(
-        "INSERT INTO posts (category, title, content, embedding, clone_of) VALUES (?, ?, ?, ?, ?)",
-        (post.category, post.title, post.content, json.dumps(new_emb_list), clone_of_id)
+        "INSERT INTO posts (category, title, content, embedding, clone_group_id, status) VALUES (?, ?, ?, ?, ?, 'Bekleniyor')",
+        (post.category, post.title, post.content, json.dumps(new_emb_list), assigned_group_id)
     )
+    new_post_id = cursor.lastrowid
+    
+    if assigned_group_id is None:
+        cursor.execute("UPDATE posts SET clone_group_id = ? WHERE id = ?", (new_post_id, new_post_id))
+        assigned_group_id = new_post_id
+        
     db.commit()
     
     return {
-        "message": "Geribildirim başarıyla alındı.",
-        "is_clone": clone_of_id is not None,
-        "clone_of": clone_of_id
+        "message": "Geribildirim AI moderasyonuna alındı.",
+        "post_id": new_post_id,
+        "clone_group_id": assigned_group_id
     }
-
-@app.get("/api/posts")
-def get_posts(db: sqlite3.Connection = Depends(get_db)):
-    cursor = db.cursor()
-    cursor.execute("SELECT id, category, title, content, clone_of, upvotes FROM posts")
-    return cursor.fetchall()
