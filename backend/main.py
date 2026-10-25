@@ -82,8 +82,11 @@ def login(req: LoginRequest, db: sqlite3.Connection = Depends(get_db)):
     if req.email == admin_email and req.password == admin_password:
         return {"message": "Admin girişi başarılı", "role": "Admin", "email": req.email}
     
-    if req.email == "ogrenci@gtu.edu.tr" and req.password == "123456":
-         return {"message": "Öğrenci girişi başarılı", "role": "Ogrenci", "email": req.email}
+    student_email = os.getenv("STUDENT_EMAIL", "ogrenci@gtu.edu.tr")
+    student_password = os.getenv("STUDENT_PASSWORD", "123456")
+
+    if req.email == student_email and req.password == student_password:
+        return {"message": "Öğrenci girişi başarılı", "role": "Öğrenci", "email": req.email}
 
     raise HTTPException(status_code=401, detail="E-posta veya şifre hatalı!")
 
@@ -109,7 +112,7 @@ def create_post(post: PostCreate, db: sqlite3.Connection = Depends(get_db)):
             ep_emb = json.loads(ep["embedding"])
             similarity = util.cos_sim(new_embedding, ep_emb).item()
             
-            if similarity > 0.65: 
+            if similarity > 0.80: 
                 assigned_group_id = ep["clone_group_id"]
                 break 
         except Exception as e:
