@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { User, ShieldCheck, ChevronRight, Loader2 } from 'lucide-react';
+import benimResmim from './earofgtu.jpg';
 
 export default function App() {
   const [isLoading, setIsLoading] = useState(false);
@@ -15,14 +16,14 @@ export default function App() {
 
   return (
     // Arka plan rengi HTML'den alındı (#f8f9fa) ve Open Sans fontu eklendi
-    <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: '#f9cd92', fontFamily: '"Open Sans", sans-serif' }}>
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: '#feedde', fontFamily: '"Open Sans", sans-serif' }}>
       
       {/* İlk tasarımdaki Squircle Konteyner */}
-      <div className="bg-white rounded-[3rem] shadow-[0_24px_48px_rgba(0,0,0,0.12)] p-10 w-full max-w-md flex flex-col items-center">
+      <div className="bg-[#161032] rounded-[3rem] shadow-[0_24px_48px_rgba(0,0,0,0.12)] p-10 w-full max-w-md flex flex-col items-center">
         
         {/* Logo Alanı (Yuvarlak ve Yazısız) */}
-        <div className="w-24 h-24 rounded-full flex items-center justify-center shadow-md mb-6 overflow-hidden border-2" style={{ borderColor: '#1a1436' }}>
-           <img src="https://obs.gtu.edu.tr/gen_imgs/uni_logo.gif" alt="GTÜ Logo" className="w-full h-full object-cover" />
+        <div className="w-24 h-24 rounded-full flex items-center justify-center shadow-md mb-6 overflow-hidden border-2" style={{ borderColor: '#f9cd92' }}>
+           <img src={benimResmim} alt="GTÜ Logo" className="w-full h-full object-cover" />
         </div>
 
         {/* Başlık (HTML'deki --ink rengi kullanıldı) */}
@@ -30,11 +31,11 @@ export default function App() {
 
         {/* Çizgiler Arasındaki Yazı (HTML'deki --ink-soft ve --sep renkleri) */}
         <div className="flex items-center w-full my-5">
-          <div className="flex-grow border-t-2" style={{ borderColor: '#dee2e6' }}></div>
+          <div className="flex-grow border-t-2" style={{ borderColor: '#f9cd92' }}></div>
           <span className="px-4 text-xs font-semibold uppercase tracking-widest text-center" style={{ color: '#feedde' }}>
             Herkes İçin Geribildirim Sistemi
           </span>
-          <div className="flex-grow border-t-2" style={{ borderColor: '#dee2e6' }}></div>
+          <div className="flex-grow border-t-2" style={{ borderColor: '#f9cd92' }}></div>
         </div>
 
         {/* Normal Yazı */}
@@ -50,9 +51,9 @@ export default function App() {
             onClick={() => handleLogin('Öğrenci')}
             disabled={isLoading}
             className="group w-full flex items-center justify-between px-6 py-4 rounded-[1.5rem] transition-all duration-200 border-2"
-            style={{ backgroundColor: '#ffffff', borderColor: '#e9ecef', color: '#14181c' }}
+            style={{ backgroundColor: '#feedde', borderColor: '#e9ecef', color: '#14181c' }}
             onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
-            onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#ffffff'}
+            onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#feedde'}
           >
             <div className="flex items-center gap-3">
               {isLoading ? <Loader2 className="animate-spin text-[#5B636A]" size={24} /> : <User size={24} className="text-[#5B636A]" strokeWidth={2} />}
@@ -66,9 +67,9 @@ export default function App() {
             onClick={() => handleLogin('Admin')}
             disabled={isLoading}
             className="group w-full flex items-center justify-between px-6 py-4 rounded-[1.5rem] transition-all duration-200 border-2"
-            style={{ backgroundColor: '#ffffff', borderColor: '#e9ecef', color: '#14181c' }}
+            style={{ backgroundColor: '#feedde', borderColor: '#e9ecef', color: '#14181c' }}
             onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
-            onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#ffffff'}
+            onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#feedde'}
           >
             <div className="flex items-center gap-3">
               {isLoading ? <Loader2 className="animate-spin text-[#5B636A]" size={24} /> : <ShieldCheck size={24} className="text-[#5B636A]" strokeWidth={2} />}
