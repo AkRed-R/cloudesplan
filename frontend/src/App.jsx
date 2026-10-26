@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, ShieldCheck, ChevronRight, Loader2, LogOut, PlusCircle, ArrowLeft, Home, Layers, Settings, ChevronLeft, X } from 'lucide-react';
+import { User, ShieldCheck, ChevronRight, Loader2, LogOut, PlusCircle, ArrowLeft, Home, Layers, Settings, ChevronLeft, X, ShieldAlert } from 'lucide-react';
 import benimResmim from './earofgtu.jpg'; 
 
 const API_BASE_URL = 'http://localhost:8000/api';
@@ -8,29 +8,35 @@ export default function App() {
   const [currentScreen, setCurrentScreen] = useState('selection');
   const [isLoading, setIsLoading] = useState(false);
   const [userRole, setUserRole] = useState('');
+  const [userEmail, setUserEmail] = useState(''); // Yeni: E-posta takibi
   const [loginError, setLoginError] = useState('');
   
   const [activePage, setActivePage] = useState('home');
   const [activeTab, setActiveTab] = useState('trend'); 
   const [selectedCategory, setSelectedCategory] = useState(null); 
   
-  // Post Modal Durumları
   const [isPostModalOpen, setIsPostModalOpen] = useState(false);
   const [postCategory, setPostCategory] = useState('');
   const [postTitle, setPostTitle] = useState('');
   const [postContent, setPostContent] = useState('');
 
-  // Fikirler Pop-up (Modal) Durumları
-  const [viewingIdeasPostId, setViewingIdeasPostId] = useState(null);
+  // Yeni: Admin Geribildirim İsteme Modalı
+  const [isAdminRequestModalOpen, setIsAdminRequestModalOpen] = useState(false);
+  const [adminRequestCategory, setAdminRequestCategory] = useState('');
+  const [adminRequestTopic, setAdminRequestTopic] = useState('');
 
-  // Fikir Ekleme Modu
+  // Yeni: Klonları Görüntüleme Modalı
+  const [viewingClonesPostId, setViewingClonesPostId] = useState(null);
+  const [clonesList, setClonesList] = useState([]);
+  const [isFetchingClones, setIsFetchingClones] = useState(false);
+
+  const [viewingIdeasPostId, setViewingIdeasPostId] = useState(null);
   const [activeIdeaPostId, setActiveIdeaPostId] = useState(null);
   const [newIdeaText, setNewIdeaText] = useState('');
 
-  // Veri ve Etkileşim Hafızası
   const [posts, setPosts] = useState([]);
   const [isFetchingPosts, setIsFetchingPosts] = useState(false);
-  const [votedPosts, setVotedPosts] = useState(new Set()); // +1 atılan postları hatırlar
+  const [votedPosts, setVotedPosts] = useState(new Set()); // UI Hızlı tepki için
 
   const categoryList = [
     { name: "Ders ve Dönem Sonu Değerlendirmeleri", type: "normal" },
@@ -78,7 +84,9 @@ export default function App() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || 'Giriş başarısız!');
+      
       setUserRole(data.role || role);
+      setUserEmail(data.email); // Başarılı girişte E-Postayı kaydet
       setCurrentScreen('home');
       setActivePage('home');
     } catch (err) {
@@ -110,14 +118,36 @@ export default function App() {
     }
   };
 
+  // Yeni: Admin Geribildirim İstek Gönderme
+  const handleAdminRequestSubmit = async (e) => {
+    e.preventDefault();
+    alert(`"${adminRequestTopic}" konulu geribildirim isteği (Kategori: ${adminRequestCategory}) başarıyla oluşturuldu!`);
+    setIsAdminRequestModalOpen(false);
+    setAdminRequestCategory('');
+    setAdminRequestTopic('');
+  };
+
+  // Güncellendi: +1 Verilirken E-posta Gönderiliyor
   const handleUpvote = async (postId) => {
     if (votedPosts.has(postId)) {
       alert("Bu gönderiye zaten +1 verdiniz!");
       return;
     }
     try {
-      await fetch(`${API_BASE_URL}/posts/${postId}/upvote`, { method: 'POST' });
-      setVotedPosts(prev => new Set(prev).add(postId)); // Postu oylandı olarak işaretle
+      const response = await fetch(`${API_BASE_URL}/posts/${postId}/upvote`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: userEmail }) 
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        alert(errorData.detail); // "Zaten oy verdiniz" uyarısı
+        setVotedPosts(prev => new Set(prev).add(postId)); // UI'ı senkronize et
+        return;
+      }
+      
+      setVotedPosts(prev => new Set(prev).add(postId));
       fetchPosts(activeTab); 
     } catch (err) {
       console.error("+1 hatası:", err);
@@ -140,7 +170,23 @@ export default function App() {
     }
   };
 
-  // POST KARTI (Ana sayfada ve Kategorilerde aynı kartı çizmek için fonksiyon)
+  // Yeni: Klonları Çek ve Göster
+  const handleViewClones = async (postId) => {
+    setViewingClonesPostId(postId);
+    setIsFetchingClones(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/posts/${postId}/clones`);
+      if (res.ok) {
+        const data = await res.json();
+        setClonesList(data);
+      }
+    } catch (err) {
+      console.error("Klonlar yüklenirken hata:", err);
+    } finally {
+      setIsFetchingClones(false);
+    }
+  };
+
   const renderPostCard = (post) => {
     const isVoted = votedPosts.has(post.id);
     return (
@@ -151,7 +197,6 @@ export default function App() {
         <h3 className="text-2xl font-bold mb-4" style={{ color: '#b84b07' }}>{post.title}</h3>
         <p className="text-base mb-8 leading-relaxed font-medium" style={{ color: '#161032', opacity: 0.85 }}>{post.content}</p>
 
-        {/* YENİ FİKİR YAZMA KUTUSU */}
         {activeIdeaPostId === post.id && (
           <div className="mb-6 p-4 border-2 rounded-2xl" style={{ borderColor: '#f4ac45' }}>
             <input 
@@ -169,15 +214,12 @@ export default function App() {
           </div>
         )}
 
-        {/* ALT BAR */}
         <div className="flex flex-wrap items-center gap-6">
-          {/* 1. +1 Tuşu (Oylandıysa soluk gözükür) */}
           <div className="flex items-center cursor-pointer group" onClick={() => handleUpvote(post.id)}>
             <button className={`w-14 h-14 rounded-full flex items-center justify-center font-black text-xl shadow-lg z-10 transition-transform ${isVoted ? 'opacity-50' : 'group-active:scale-95'}`} style={{ backgroundColor: '#f4ac45', color: '#161032' }}>+1</button>
             <div className={`h-10 flex items-center justify-center px-4 font-extrabold text-lg rounded-r-full -ml-4 pl-6 z-0 shadow-sm transition-transform ${isVoted ? 'opacity-50' : 'group-active:scale-95'}`} style={{ backgroundColor: '#f9cd92', color: '#161032' }}>{post.upvotes}</div>
           </div>
 
-          {/* 2. Fikirler Tuşu */}
           <div className="flex items-center">
             <div className="flex items-stretch h-12 rounded-full shadow-md z-10 border-2 overflow-hidden" style={{ backgroundColor: '#161032', borderColor: '#161032', color: '#feedde' }}>
               <button onClick={() => setViewingIdeasPostId(post.id)} className="px-5 font-extrabold text-[11pt] transition-colors hover:bg-white/20 active:bg-white/30 flex items-center justify-center">Fikirler</button>
@@ -187,9 +229,8 @@ export default function App() {
             <div className="h-10 flex items-center justify-center px-4 font-bold text-lg rounded-r-full -ml-4 pl-6 z-0 border-y-2 border-r-2" style={{ borderColor: '#161032', backgroundColor: '#feedde', color: '#161032' }}>{post.ideas_count || 0}</div>
           </div>
 
-          {/* 3. Klon Tuşu */}
           <div className="flex items-center ml-auto">
-            <button className="h-12 px-6 rounded-full flex items-center justify-center font-extrabold text-[11pt] shadow-md z-10 border-2 transition-colors hover:bg-white active:scale-95" style={{ borderColor: 'rgba(22, 16, 50, 0.15)', backgroundColor: '#feedde', color: '#161032' }}>Klonları Gör</button>
+            <button onClick={() => handleViewClones(post.id)} className="h-12 px-6 rounded-full flex items-center justify-center font-extrabold text-[11pt] shadow-md z-10 border-2 transition-colors hover:bg-white active:scale-95" style={{ borderColor: 'rgba(22, 16, 50, 0.15)', backgroundColor: '#feedde', color: '#161032' }}>Klonları Gör</button>
             <div className="h-10 flex items-center justify-center px-4 font-bold text-lg rounded-r-full -ml-4 pl-6 z-0 border-y-2 border-r-2" style={{ borderColor: 'rgba(22, 16, 50, 0.15)', backgroundColor: 'transparent', color: '#161032' }}>{post.clone_count || 0}</div>
           </div>
         </div>
@@ -291,15 +332,37 @@ export default function App() {
         </div>
       )}
 
-      {/* 2. FİKİRLERİ LİSTELEME MODALI (POP-UP) */}
-      {viewingIdeasPostId && (
+      {/* 2. ADMİN GERİBİLDİRİM İSTEĞİ AÇMA MODALI */}
+      {isAdminRequestModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm" style={{ backgroundColor: 'rgba(22, 16, 50, 0.7)' }}>
           <div className="rounded-[2.5rem] p-8 w-full max-w-xl shadow-2xl relative" style={{ backgroundColor: '#feedde' }}>
+            <button onClick={() => setIsAdminRequestModalOpen(false)} className="absolute top-6 right-6 hover:opacity-70 transition-opacity" style={{ color: '#161032' }}>
+              <X size={28} strokeWidth={2.5} />
+            </button>
+            <h2 className="text-2xl font-bold mb-6" style={{ color: '#161032' }}>Geribildirim İsteği Aç</h2>
+            <form onSubmit={handleAdminRequestSubmit} className="space-y-5">
+              <select value={adminRequestCategory} onChange={(e) => setAdminRequestCategory(e.target.value)} required className="w-full p-4 rounded-2xl border-2 font-bold outline-none cursor-pointer" style={{ backgroundColor: 'white', borderColor: 'rgba(22,16,50,0.1)', color: '#161032' }}>
+                <option value="" disabled>Hedef Kategori Seçin...</option>
+                {categoryList.filter(c => c.type === 'normal').map((cat, i) => <option key={i} value={cat.name}>{cat.name}</option>)}
+              </select>
+              <input type="text" value={adminRequestTopic} onChange={(e) => setAdminRequestTopic(e.target.value)} required placeholder="İstenecek Konu (Örn: Yeni Ring Saatleri Hakkında)" className="w-full p-4 rounded-2xl border-2 font-bold outline-none" style={{ backgroundColor: 'white', borderColor: 'rgba(22,16,50,0.1)', color: '#161032' }} />
+              <button type="submit" className="w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-md hover:scale-[1.02] active:scale-95 transition-all" style={{ backgroundColor: '#b84b07', color: '#feedde' }}>
+                <ShieldAlert size={22} /><span className="text-lg">Öğrencilerden Geri Bildirim İste</span>
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 3. FİKİRLERİ LİSTELEME MODALI (POP-UP) */}
+      {viewingIdeasPostId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm" style={{ backgroundColor: 'rgba(22, 16, 50, 0.7)' }}>
+          <div className="rounded-[2.5rem] p-8 w-full max-w-xl shadow-2xl relative max-h-[80vh] flex flex-col" style={{ backgroundColor: '#feedde' }}>
             <button onClick={() => setViewingIdeasPostId(null)} className="absolute top-6 right-6 hover:opacity-70 transition-opacity" style={{ color: '#161032' }}>
               <X size={28} strokeWidth={2.5} />
             </button>
             <h2 className="text-2xl font-bold mb-6" style={{ color: '#161032' }}>Öğrenci Fikirleri</h2>
-            <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+            <div className="overflow-y-auto space-y-4 pr-2">
               {posts.find(p => p.id === viewingIdeasPostId)?.ideas?.length > 0 ? (
                 posts.find(p => p.id === viewingIdeasPostId).ideas.map((idea, i) => (
                   <div key={i} className="p-4 bg-white rounded-2xl shadow-sm border-2" style={{ borderColor: 'rgba(22, 16, 50, 0.05)', color: '#161032' }}>
@@ -314,6 +377,36 @@ export default function App() {
         </div>
       )}
 
+      {/* 4. KLONLARI GÖRÜNTÜLEME MODALI (POP-UP) */}
+      {viewingClonesPostId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm" style={{ backgroundColor: 'rgba(22, 16, 50, 0.7)' }}>
+          <div className="rounded-[2.5rem] p-8 w-full max-w-xl shadow-2xl relative max-h-[80vh] flex flex-col" style={{ backgroundColor: '#feedde' }}>
+            <button onClick={() => { setViewingClonesPostId(null); setClonesList([]); }} className="absolute top-6 right-6 hover:opacity-70 transition-opacity" style={{ color: '#161032' }}>
+              <X size={28} strokeWidth={2.5} />
+            </button>
+            <h2 className="text-2xl font-bold mb-6" style={{ color: '#161032' }}>Benzer Geribildirimler (Klonlar)</h2>
+            <div className="overflow-y-auto space-y-4 pr-2">
+              {isFetchingClones ? (
+                <div className="text-center py-8"><Loader2 className="animate-spin mx-auto text-[#161032]" size={32} /></div>
+              ) : clonesList.length > 0 ? (
+                clonesList.map(clone => (
+                  <div key={clone.id} className="p-5 bg-white rounded-2xl shadow-sm border-2" style={{ borderColor: 'rgba(22, 16, 50, 0.05)', color: '#161032' }}>
+                    <h4 className="font-extrabold mb-2" style={{ color: '#b84b07' }}>{clone.title}</h4>
+                    <p className="font-medium text-sm opacity-85">{clone.content}</p>
+                    <div className="mt-3 flex justify-between items-center text-xs font-bold opacity-60">
+                      <span>+1 Sayısı: {clone.upvotes}</span>
+                      <span>Kategori: {clone.category}</span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="font-medium opacity-60 text-center py-4" style={{ color: '#161032' }}>Bu gönderinin başka bir klonu bulunmuyor.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* SOL NAVİGASYON */}
       <aside className="w-1/4 flex flex-col p-6 lg:p-8 shadow-2xl z-10 sticky top-0 h-screen" style={{ backgroundColor: '#161032' }}>
         <div className="flex flex-col items-center mb-10">
@@ -321,10 +414,18 @@ export default function App() {
             <img src={benimResmim} alt="Logo" className="w-full h-full object-cover" />
           </div>
           <h1 className="text-xl lg:text-2xl font-extrabold tracking-wide text-center" style={{ color: '#feedde' }}>GTÜ'nün Kulağı</h1>
-          <span className="text-xs font-bold px-3 py-1 rounded-full mt-2" style={{ backgroundColor: '#f9cd92', color: '#161032' }}>{userRole} Modu</span>
+          <span className="text-xs font-bold px-3 py-1 rounded-full mt-2" style={{ backgroundColor: '#f9cd92', color: '#161032' }}>{userEmail}</span>
         </div>
 
         <nav className="flex flex-col gap-4 flex-1 w-full max-w-sm mx-auto">
+          {/* Sadece Adminlere Özel 'Geribildirim İste' Tuşu */}
+          {userRole === 'Admin' && (
+            <button onClick={() => setIsAdminRequestModalOpen(true)} className="flex items-center justify-center gap-2 w-full py-4 rounded-2xl font-bold transition-transform active:scale-95 mb-2 shadow-md" style={{ backgroundColor: '#b84b07', color: '#feedde' }}>
+              <ShieldAlert size={22} />
+              <span className="text-[11pt]">Geribildirim İste</span>
+            </button>
+          )}
+
           <button onClick={() => setIsPostModalOpen(true)} className="flex items-center justify-center gap-2 w-full py-4 rounded-2xl font-bold transition-transform active:scale-95 mb-4 shadow-md" style={{ backgroundColor: '#f4ac45', color: '#161032' }}>
             <PlusCircle size={22} />
             <span className="text-[11pt]">Geribildirim Postla</span>
@@ -335,8 +436,11 @@ export default function App() {
           <button onClick={() => setActivePage('categories')} className={`flex items-center gap-4 px-5 py-4 rounded-2xl font-bold transition-colors ${activePage === 'categories' ? 'shadow-md' : 'hover:bg-white/10'}`} style={{ backgroundColor: activePage === 'categories' ? '#f9cd92' : 'transparent', color: activePage === 'categories' ? '#161032' : '#feedde' }}>
             <Layers size={22} /><span>Kategoriler</span>
           </button>
+          <button onClick={() => { setActivePage('settings'); setSelectedCategory(null); }} className={`flex items-center gap-4 px-5 py-4 rounded-2xl font-bold transition-colors ${activePage === 'settings' ? 'shadow-md' : 'hover:bg-white/10'}`} style={{ backgroundColor: activePage === 'settings' ? '#f9cd92' : 'transparent', color: activePage === 'settings' ? '#161032' : '#feedde' }}>
+            <Settings size={22} /><span>Ayarlar</span>
+          </button>
         </nav>
-        <button onClick={() => setCurrentScreen('selection')} className="flex items-center gap-3 px-5 py-4 rounded-2xl font-semibold transition-colors hover:bg-white/10 w-full max-w-sm mx-auto mt-auto opacity-80 hover:opacity-100" style={{ color: '#feedde' }}>
+        <button onClick={() => { setCurrentScreen('selection'); setUserEmail(''); }} className="flex items-center gap-3 px-5 py-4 rounded-2xl font-semibold transition-colors hover:bg-white/10 w-full max-w-sm mx-auto mt-auto opacity-80 hover:opacity-100" style={{ color: '#feedde' }}>
           <LogOut size={22} /><span>Çıkış Yap</span>
         </button>
       </aside>
@@ -396,7 +500,6 @@ export default function App() {
                   </button>
                   <h2 className="text-3xl font-bold mb-8" style={{ color: '#b84b07' }}>{selectedCategory}</h2>
                   
-                  {/* SEÇİLEN KATEGORİDEKİ POSTLARI LİSTELE */}
                   <div className="space-y-6">
                     {posts.filter(p => p.category === selectedCategory).length === 0 ? (
                       <div className="text-center py-12 font-bold opacity-60" style={{ color: '#161032' }}>Bu kategoride henüz geribildirim bulunmuyor.</div>
@@ -408,6 +511,37 @@ export default function App() {
               )}
             </>
           )}
+
+          {/* AYARLAR EKRANI */}
+          {activePage === 'settings' && (
+            <div className="bg-white rounded-[2.5rem] p-10 shadow-md border-2" style={{ borderColor: 'rgba(22, 16, 50, 0.05)' }}>
+              <h2 className="text-3xl font-bold mb-10" style={{ color: '#161032' }}>Ayarlar</h2>
+              <div className="space-y-8">
+                
+                {/* Dil Seçimi */}
+                <div>
+                  <label className="block text-lg font-bold mb-3" style={{ color: '#161032' }}>Dil Seçimi</label>
+                  <select className="w-full max-w-sm p-4 rounded-2xl border-2 font-bold outline-none cursor-pointer" style={{ backgroundColor: '#feedde', borderColor: 'rgba(22,16,50,0.1)', color: '#161032' }}>
+                    <option value="tr">Türkçe</option>
+                  </select>
+                </div>
+
+                {/* Erişilebilirlik Uyarı Kutusu */}
+                <div className="p-6 rounded-3xl border-2" style={{ backgroundColor: '#fff', borderColor: '#f9cd92', color: '#161032' }}>
+                  <h4 className="font-extrabold text-lg mb-2">Erişilebilirlik</h4>
+                  <p className="font-medium opacity-80 flex items-center flex-wrap gap-2">
+                    Sayfayı yaklaştırmak için: 
+                    <kbd className="px-3 py-1 rounded-lg font-bold shadow-sm border border-gray-200" style={{ backgroundColor: '#feedde' }}>Ctrl</kbd> 
+                    + 
+                    <kbd className="px-3 py-1 rounded-lg font-bold shadow-sm border border-gray-200" style={{ backgroundColor: '#feedde' }}>Fare Tekeri</kbd>
+                    kullanabilirsiniz.
+                  </p>
+                </div>
+
+              </div>
+            </div>
+          )}
+
         </div>
       </main>
       

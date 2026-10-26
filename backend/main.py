@@ -8,12 +8,10 @@ import os
 from dotenv import load_dotenv
 from datetime import datetime
 
-# .env dosyasındaki gizli şifreleri yükle
 load_dotenv()
 
 app = FastAPI(title="EAR OF GTU API")
 
-# CORS İzni (Frontend'in bağlanabilmesi için)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -26,7 +24,6 @@ print("Yapay Zeka modeli yükleniyor... (all-MiniLM-L6-v2)")
 model = SentenceTransformer('all-MiniLM-L6-v2')
 print("Model başarıyla yüklendi!")
 
-# ----------------- VERİTABANI BAĞLANTISI VE KURULUMU -----------------
 def get_db():
     conn = sqlite3.connect("ear_of_gtu.db", check_same_thread=False)
     conn.row_factory = sqlite3.Row
@@ -42,12 +39,13 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS posts (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, title TEXT, content TEXT, embedding TEXT, clone_group_id INTEGER, status TEXT DEFAULT 'Bekleniyor', upvotes INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)''')
     c.execute('''CREATE TABLE IF NOT EXISTS ideas (id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER, content TEXT, upvotes INTEGER DEFAULT 0)''')
     c.execute('''CREATE TABLE IF NOT EXISTS tags (id INTEGER PRIMARY KEY AUTOINCREMENT, tag_name TEXT, description TEXT)''')
+    # YENİ TABLO: Kimin kime +1 verdiğini tutmak için
+    c.execute('''CREATE TABLE IF NOT EXISTS post_upvotes (id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER, user_email TEXT, UNIQUE(post_id, user_email))''')
     conn.commit()
     conn.close()
 
 init_db()
 
-# ----------------- MODELLER -----------------
 class LoginRequest(BaseModel):
     email: str
     password: str
@@ -60,21 +58,19 @@ class PostCreate(BaseModel):
 class IdeaCreate(BaseModel):
     content: str
 
-# ----------------- UÇ NOKTALAR (ENDPOINTS) -----------------
+class UpvoteRequest(BaseModel):
+    email: str
 
 @app.post("/api/login")
 def login(req: LoginRequest, db: sqlite3.Connection = Depends(get_db)):
-    # Şifreler SADECE .env dosyasından çekiliyor. (Hardcoded değerler silindi)
     admin_email = os.getenv("ADMIN_EMAIL")
     admin_password = os.getenv("ADMIN_PASSWORD")
     student_email = os.getenv("STUDENT_EMAIL")
     student_password = os.getenv("STUDENT_PASSWORD")
 
-    # Admin kontrolü
     if admin_email and admin_password and req.email == admin_email and req.password == admin_password:
         return {"message": "Admin girişi başarılı", "role": "Admin", "email": req.email}
     
-    # Öğrenci kontrolü
     if student_email and student_password and req.email == student_email and req.password == student_password:
          return {"message": "Öğrenci girişi başarılı", "role": "Öğrenci", "email": req.email}
          
@@ -89,7 +85,6 @@ def create_post(post: PostCreate, db: sqlite3.Connection = Depends(get_db)):
     existing_posts = cursor.fetchall()
     
     assigned_group_id = None
-    # Klon Analizi
     for ep in existing_posts:
         try:
             ep_emb = json.loads(ep["embedding"])
@@ -123,9 +118,8 @@ def get_posts(sort: str = "trend", db: sqlite3.Connection = Depends(get_db)):
         p_dict = dict(p)
         
         cursor.execute("SELECT * FROM ideas WHERE post_id = ?", (p_dict['id'],))
-        ideas = [dict(i) for i in cursor.fetchall()]
-        p_dict["ideas"] = ideas
-        p_dict["ideas_count"] = len(ideas)
+        p_dict["ideas"] = [dict(i) for i in cursor.fetchall()]
+        p_dict["ideas_count"] = len(p_dict["ideas"])
         
         cursor.execute("SELECT COUNT(*) as cnt FROM posts WHERE clone_group_id = ? AND id != ?", (p_dict['clone_group_id'], p_dict['id']))
         p_dict["clone_count"] = cursor.fetchone()["cnt"]
@@ -148,12 +142,33 @@ def get_posts(sort: str = "trend", db: sqlite3.Connection = Depends(get_db)):
     return result[:30]
 
 
-@app.post("/api/posts/{post_id}/upvote")
-def upvote_post(post_id: int, db: sqlite3.Connection = Depends(get_db)):
+# YENİ API: Sadece Klonları Getir
+@app.get("/api/posts/{post_id}/clones")
+def get_post_clones(post_id: int, db: sqlite3.Connection = Depends(get_db)):
     cursor = db.cursor()
-    cursor.execute("UPDATE posts SET upvotes = upvotes + 1 WHERE id = ?", (post_id,))
-    db.commit()
-    return {"message": "+1 verildi"}
+    cursor.execute("SELECT clone_group_id FROM posts WHERE id = ?", (post_id,))
+    row = cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Gönderi bulunamadı")
+        
+    group_id = row["clone_group_id"]
+    cursor.execute("SELECT id, category, title, content, upvotes, created_at FROM posts WHERE clone_group_id = ? AND id != ? AND status != 'Reddedildi'", (group_id, post_id))
+    
+    return [dict(p) for p in cursor.fetchall()]
+
+
+# GÜNCELLENEN API: E-Postaya Göre +1 Doğrulaması
+@app.post("/api/posts/{post_id}/upvote")
+def upvote_post(post_id: int, req: UpvoteRequest, db: sqlite3.Connection = Depends(get_db)):
+    cursor = db.cursor()
+    try:
+        # Önce bu emaile ve bu post id'ye sahip kayıt atmayı dener, UNIQUE kısıtlaması varsa hata fırlatır
+        cursor.execute("INSERT INTO post_upvotes (post_id, user_email) VALUES (?, ?)", (post_id, req.email))
+        cursor.execute("UPDATE posts SET upvotes = upvotes + 1 WHERE id = ?", (post_id,))
+        db.commit()
+        return {"message": "+1 verildi"}
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="Bu gönderiye zaten +1 verdiniz!")
 
 
 @app.post("/api/posts/{post_id}/ideas")
