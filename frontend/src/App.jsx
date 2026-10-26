@@ -15,19 +15,17 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('trend'); 
   const [selectedCategory, setSelectedCategory] = useState(null); 
   
-  // Post Modalı
   const [isPostModalOpen, setIsPostModalOpen] = useState(false);
   const [postCategory, setPostCategory] = useState('');
   const [postTitle, setPostTitle] = useState('');
   const [postContent, setPostContent] = useState('');
   const [postIsRequested, setPostIsRequested] = useState(false);
+  const [postRequestTag, setPostRequestTag] = useState(null);
 
-  // Admin Geribildirim Modalı
   const [isAdminRequestModalOpen, setIsAdminRequestModalOpen] = useState(false);
   const [adminRequestCategory, setAdminRequestCategory] = useState('');
   const [adminRequestTopic, setAdminRequestTopic] = useState('');
 
-  // Listeler
   const [posts, setPosts] = useState([]);
   const [isFetchingPosts, setIsFetchingPosts] = useState(false);
   const [adminTags, setAdminTags] = useState([]);
@@ -119,13 +117,18 @@ export default function App() {
           category: postCategory, 
           title: postTitle, 
           content: postContent,
-          is_requested: postIsRequested 
+          is_requested: postIsRequested,
+          request_tag: postRequestTag,
+          author_email: userEmail
         }),
       });
       if (response.ok) {
         setIsPostModalOpen(false);
-        setPostCategory(''); setPostTitle(''); setPostContent(''); setPostIsRequested(false);
+        setPostCategory(''); setPostTitle(''); setPostContent(''); setPostIsRequested(false); setPostRequestTag(null);
         fetchPosts(activeTab); 
+      } else {
+        const err = await response.json();
+        console.error("Sunucu Hatası:", err);
       }
     } catch (err) {
       console.error("Post hatası:", err);
@@ -137,37 +140,29 @@ export default function App() {
   const handleAdminRequestSubmit = async (e) => {
     e.preventDefault();
     if (!adminRequestCategory || !adminRequestTopic) return;
-    
-    // Rastgele palet rengi ata
     const colors = ['#b84b07', '#f4ac45', '#161032'];
     const randomColor = colors[Math.floor(Math.random() * colors.length)];
-
     try {
       const response = await fetch(`${API_BASE_URL}/tags`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          category: adminRequestCategory, 
-          tag_name: adminRequestTopic, 
-          color: randomColor 
-        }),
+        body: JSON.stringify({ category: adminRequestCategory, tag_name: adminRequestTopic, color: randomColor }),
       });
       if (response.ok) {
         setIsAdminRequestModalOpen(false);
-        setAdminRequestCategory('');
-        setAdminRequestTopic('');
-        fetchTags(); // Sol menüyü yenile
+        setAdminRequestCategory(''); setAdminRequestTopic('');
+        fetchTags();
       }
     } catch (err) {
       console.error("İstek hatası:", err);
     }
   };
 
-  // Öğrenci İstek Etiketine Tıklayınca Otomatik Form Doldurma
   const openPostModalForRequest = (tag) => {
     setPostCategory(tag.category);
     setPostTitle(tag.tag_name);
     setPostIsRequested(true);
+    setPostRequestTag(tag.tag_name);
     setIsPostModalOpen(true);
   };
 
@@ -182,14 +177,11 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: userEmail }) 
       });
-      
       if (!response.ok) {
         const errorData = await response.json();
         alert(errorData.detail); 
-        setVotedPosts(prev => new Set(prev).add(postId)); 
         return;
       }
-      
       setVotedPosts(prev => new Set(prev).add(postId));
       fetchPosts(activeTab); 
     } catch (err) {
@@ -213,6 +205,19 @@ export default function App() {
     }
   };
 
+  const handleStatusUpdate = async (postId, newStatus, newCategory) => {
+    try {
+      await fetch(`${API_BASE_URL}/posts/${postId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus, category: newCategory })
+      });
+      fetchPosts(activeTab);
+    } catch (err) {
+      console.error("Durum güncelleme hatası:", err);
+    }
+  };
+
   const handleViewClones = async (postId) => {
     setViewingClonesPostId(postId);
     setIsFetchingClones(true);
@@ -226,7 +231,6 @@ export default function App() {
     }
   };
 
-  // E-Postayı gizleme formatı (ogr***@gtu.edu.tr)
   const formatEmail = (email) => {
     if (!email) return "Anonim";
     const parts = email.split('@');
@@ -236,32 +240,26 @@ export default function App() {
 
   const renderPostCard = (post) => {
     const isVoted = votedPosts.has(post.id);
+    const isProcessed = post.category === 'Dikkate Alınanlar' || post.category === 'Reddedilenler';
+
     return (
       <article key={post.id} className="bg-white rounded-[2.5rem] p-8 shadow-md border-2 relative" style={{ borderColor: 'rgba(22, 16, 50, 0.05)' }}>
-        
-        {/* Yeni: İstenmiş Etiketi (Rozet) */}
         {post.is_requested && (
           <div className="absolute top-8 right-8 flex items-center gap-2 px-4 py-2 rounded-xl font-extrabold text-xs shadow-sm" style={{ backgroundColor: '#feedde', color: '#b84b07' }}>
-            <TagIcon size={14} /> Admin İsteği
+            <TagIcon size={14} /> {post.request_tag || "Admin İsteği"}
           </div>
         )}
 
-        <div className="mb-2">
+        <div className="mb-2 flex items-center justify-between">
           <span className="text-lg font-extrabold uppercase tracking-wide" style={{ color: '#161032' }}>{post.category}</span>
+          {!post.is_requested && <span className="text-xs font-bold opacity-50 flex items-center gap-1"><User size={12}/> {formatEmail(post.author_email)}</span>}
         </div>
         <h3 className="text-2xl font-bold mb-4 pr-32" style={{ color: '#b84b07' }}>{post.title}</h3>
         <p className="text-base mb-8 leading-relaxed font-medium" style={{ color: '#161032', opacity: 0.85 }}>{post.content}</p>
 
         {activeIdeaPostId === post.id && (
           <div className="mb-6 p-4 border-2 rounded-2xl" style={{ borderColor: '#f4ac45' }}>
-            <input 
-              type="text" 
-              placeholder="Fikrini yaz..." 
-              value={newIdeaText}
-              onChange={(e) => setNewIdeaText(e.target.value)}
-              className="w-full p-3 rounded-xl mb-3 outline-none font-medium"
-              style={{ backgroundColor: '#feedde', color: '#161032' }}
-            />
+            <input type="text" placeholder="Fikrini yaz..." value={newIdeaText} onChange={(e) => setNewIdeaText(e.target.value)} className="w-full p-3 rounded-xl mb-3 outline-none font-medium" style={{ backgroundColor: '#feedde', color: '#161032' }} />
             <div className="flex gap-2">
               <button onClick={() => handleAddIdea(post.id)} className="px-4 py-2 rounded-xl font-bold text-xs bg-[#f4ac45] text-[#161032] hover:opacity-80">Gönder</button>
               <button onClick={() => setActiveIdeaPostId(null)} className="px-4 py-2 rounded-xl font-bold text-xs bg-gray-200 text-gray-700 hover:bg-gray-300">İptal</button>
@@ -289,11 +287,17 @@ export default function App() {
             <div className="h-10 flex items-center justify-center px-4 font-bold text-lg rounded-r-full -ml-4 pl-6 z-0 border-y-2 border-r-2" style={{ borderColor: 'rgba(22, 16, 50, 0.15)', backgroundColor: 'transparent', color: '#161032' }}>{post.clone_count || 0}</div>
           </div>
         </div>
+
+        {userRole === 'Admin' && !isProcessed && (
+          <div className="flex gap-4 mt-6 pt-6 border-t-2" style={{ borderColor: 'rgba(22, 16, 50, 0.05)' }}>
+            <button onClick={() => handleStatusUpdate(post.id, 'Dikkate Alındı', 'Dikkate Alınanlar')} className="flex-1 py-3 rounded-xl font-bold text-sm bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors">Dikkate Al</button>
+            <button onClick={() => handleStatusUpdate(post.id, 'Reddedildi', 'Reddedilenler')} className="flex-1 py-3 rounded-xl font-bold text-sm bg-red-100 text-red-700 hover:bg-red-200 transition-colors">Reddet</button>
+          </div>
+        )}
       </article>
     );
   };
 
-  // EKRAN: 1 (ROL SEÇİMİ)
   if (currentScreen === 'selection') {
     return (
       <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: '#feedde', fontFamily: '"Open Sans", sans-serif' }}>
@@ -307,6 +311,7 @@ export default function App() {
             <span className="px-4 text-xs font-semibold uppercase tracking-widest text-center" style={{ color: '#feedde' }}>Herkes İçin Geribildirim</span>
             <div className="flex-grow border-t-2" style={{ borderColor: '#f9cd92' }}></div>
           </div>
+          <p className="font-medium mb-8 text-sm" style={{ color: '#feedde' }}>Söyleyecek bir şeyin mi var?</p>
           <div className="w-full space-y-4">
             <button onClick={() => { setCurrentScreen('student_login'); setLoginError(''); }} className="group w-full flex items-center justify-between px-6 py-4 rounded-3xl transition-all border-2" style={{ backgroundColor: '#feedde', borderColor: '#e9ecef', color: '#14181c' }}>
               <div className="flex items-center gap-3">
@@ -328,7 +333,6 @@ export default function App() {
     );
   }
 
-  // EKRAN: 2 (GİRİŞ FORMU)
   if (currentScreen === 'student_login' || currentScreen === 'admin_login') {
     const isStudent = currentScreen === 'student_login';
     return (
@@ -353,20 +357,18 @@ export default function App() {
     );
   }
 
-  // EKRAN: 3 (ANA SAYFA)
   return (
     <div className="min-h-screen flex relative" style={{ backgroundColor: '#feedde', fontFamily: '"Open Sans", sans-serif' }}>
       
-      {/* 1. YENİ POST ATMA MODALI */}
       {isPostModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm" style={{ backgroundColor: 'rgba(22, 16, 50, 0.7)' }}>
           <div className="rounded-[2.5rem] p-8 w-full max-w-xl shadow-2xl relative" style={{ backgroundColor: '#feedde' }}>
-            <button onClick={() => {setIsPostModalOpen(false); setPostIsRequested(false); setPostCategory(''); setPostTitle('');}} className="absolute top-6 right-6 hover:opacity-70 transition-opacity" style={{ color: '#161032' }}>
+            <button onClick={() => {setIsPostModalOpen(false); setPostIsRequested(false); setPostCategory(''); setPostTitle(''); setPostRequestTag(null);}} className="absolute top-6 right-6 hover:opacity-70 transition-opacity" style={{ color: '#161032' }}>
               <X size={28} strokeWidth={2.5} />
             </button>
             <h2 className="text-2xl font-bold mb-6 flex items-center gap-2" style={{ color: '#161032' }}>
               Yeni Geribildirim Postla 
-              {postIsRequested && <span className="text-xs px-3 py-1 rounded-full bg-red-100 text-red-600 border border-red-300">Admin İsteği Yanıtı</span>}
+              {postIsRequested && <span className="text-xs px-3 py-1 rounded-full bg-red-100 text-red-600 border border-red-300">{postRequestTag} İsteği</span>}
             </h2>
             <form onSubmit={handleCreatePost} className="space-y-5">
               <select value={postCategory} onChange={(e) => setPostCategory(e.target.value)} required disabled={postIsRequested} className="w-full p-4 rounded-2xl border-2 font-bold outline-none cursor-pointer disabled:opacity-70" style={{ backgroundColor: 'white', borderColor: 'rgba(22,16,50,0.1)', color: '#161032' }}>
@@ -386,7 +388,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 2. ADMİN GERİBİLDİRİM İSTEĞİ AÇMA MODALI */}
       {isAdminRequestModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm" style={{ backgroundColor: 'rgba(22, 16, 50, 0.7)' }}>
           <div className="rounded-[2.5rem] p-8 w-full max-w-xl shadow-2xl relative" style={{ backgroundColor: '#feedde' }}>
@@ -408,7 +409,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 3. FİKİRLERİ LİSTELEME MODALI */}
       {viewingIdeasPostId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm" style={{ backgroundColor: 'rgba(22, 16, 50, 0.7)' }}>
           <div className="rounded-[2.5rem] p-8 w-full max-w-xl shadow-2xl relative max-h-[80vh] flex flex-col" style={{ backgroundColor: '#feedde' }}>
@@ -434,7 +434,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 4. KLONLARI GÖRÜNTÜLEME MODALI */}
       {viewingClonesPostId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm" style={{ backgroundColor: 'rgba(22, 16, 50, 0.7)' }}>
           <div className="rounded-[2.5rem] p-8 w-full max-w-xl shadow-2xl relative max-h-[80vh] flex flex-col" style={{ backgroundColor: '#feedde' }}>
@@ -448,13 +447,14 @@ export default function App() {
               ) : clonesList.length > 0 ? (
                 clonesList.map(clone => (
                   <div key={clone.id} className="p-5 bg-white rounded-2xl shadow-sm border-2 relative" style={{ borderColor: 'rgba(22, 16, 50, 0.05)', color: '#161032' }}>
-                    
                     {clone.is_requested && (
                       <div className="absolute top-4 right-4 flex items-center gap-1 px-2 py-1 rounded-md font-bold text-[10px]" style={{ backgroundColor: '#feedde', color: '#b84b07' }}>
-                        <TagIcon size={10} /> Admin İsteği
+                        <TagIcon size={10} /> {clone.request_tag || "Admin İsteği"}
                       </div>
                     )}
-
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-[10px] font-bold opacity-50 flex items-center gap-1"><User size={10}/> {formatEmail(clone.author_email)}</span>
+                    </div>
                     <h4 className="font-extrabold mb-2 pr-20" style={{ color: '#b84b07' }}>{clone.title}</h4>
                     <p className="font-medium text-sm opacity-85">{clone.content}</p>
                     <div className="mt-3 flex justify-between items-center text-xs font-bold opacity-60">
@@ -471,7 +471,6 @@ export default function App() {
         </div>
       )}
 
-      {/* SOL NAVİGASYON */}
       <aside className="w-1/4 flex flex-col p-6 lg:p-8 shadow-2xl z-10 sticky top-0 h-screen" style={{ backgroundColor: '#161032' }}>
         <div className="flex flex-col items-center mb-10">
           <div className="w-24 h-24 rounded-full overflow-hidden border-4 shadow-lg mb-4" style={{ borderColor: '#f9cd92' }}>
@@ -499,7 +498,6 @@ export default function App() {
             <Layers size={22} /><span>Kategoriler</span>
           </button>
 
-          {/* DİNAMİK: ADMİN İSTEKLERİ (Etiketler) - Kategorilerin Altında */}
           {adminTags.length > 0 && (
             <div className="mt-2 mb-2 space-y-2">
               <div className="px-5 text-xs font-bold opacity-50 uppercase tracking-widest text-white">İstenen Geribildirimler</div>
@@ -516,10 +514,8 @@ export default function App() {
               ))}
             </div>
           )}
-
         </nav>
 
-        {/* AYARLAR TUŞU ÇIKIŞ YAPININ ÜSTÜNE TAŞINDI */}
         <div className="mt-auto space-y-2 w-full max-w-sm mx-auto pt-4">
           <button onClick={() => { setActivePage('settings'); setSelectedCategory(null); }} className={`flex items-center gap-4 px-5 py-4 rounded-2xl font-bold transition-colors ${activePage === 'settings' ? 'shadow-md' : 'hover:bg-white/10'}`} style={{ backgroundColor: activePage === 'settings' ? '#f9cd92' : 'transparent', color: activePage === 'settings' ? '#161032' : '#feedde' }}>
             <Settings size={22} /><span>Ayarlar</span>
@@ -530,7 +526,6 @@ export default function App() {
         </div>
       </aside>
 
-      {/* SAĞ İÇERİK */}
       <main className="w-3/4 h-screen overflow-y-auto p-10">
         <div className="max-w-4xl mx-auto space-y-8">
           
@@ -549,10 +544,10 @@ export default function App() {
               <div className="space-y-6">
                 {isFetchingPosts ? (
                   <div className="text-center py-12"><Loader2 className="animate-spin mx-auto text-[#161032]" size={36} /></div>
-                ) : posts.length === 0 ? (
-                  <div className="text-center py-12 font-bold opacity-60" style={{ color: '#161032' }}>Henüz geribildirim bulunmuyor. İlk postu sen at!</div>
+                ) : posts.filter(p => p.category !== 'Dikkate Alınanlar' && p.category !== 'Reddedilenler').length === 0 ? (
+                  <div className="text-center py-12 font-bold opacity-60" style={{ color: '#161032' }}>Ana akışta henüz geribildirim bulunmuyor.</div>
                 ) : (
-                  posts.map((post) => renderPostCard(post))
+                  posts.filter(p => p.category !== 'Dikkate Alınanlar' && p.category !== 'Reddedilenler').map((post) => renderPostCard(post))
                 )}
               </div>
             </>

@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Optional
 from sentence_transformers import SentenceTransformer, util
 import sqlite3
 import json
@@ -35,28 +36,11 @@ def get_db():
 def init_db():
     conn = sqlite3.connect("ear_of_gtu.db")
     c = conn.cursor()
-    
-    # 1. Klasik Tablo Kurulumları (Dosya zaten varsa bunları pas geçer)
     c.execute('''CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT UNIQUE, password TEXT, role TEXT, banned_until DATETIME)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS posts (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, title TEXT, content TEXT, embedding TEXT, clone_group_id INTEGER, status TEXT DEFAULT 'Bekleniyor', is_requested BOOLEAN DEFAULT 0, upvotes INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS posts (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, title TEXT, content TEXT, embedding TEXT, clone_group_id INTEGER, status TEXT DEFAULT 'Bekleniyor', is_requested BOOLEAN DEFAULT 0, request_tag TEXT, author_email TEXT, upvotes INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)''')
     c.execute('''CREATE TABLE IF NOT EXISTS ideas (id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER, user_email TEXT, content TEXT, upvotes INTEGER DEFAULT 0)''')
     c.execute('''CREATE TABLE IF NOT EXISTS tags (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, tag_name TEXT, color TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS post_upvotes (id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER, user_email TEXT, UNIQUE(post_id, user_email))''')
-    
-    # 2. DOCKER İÇİN GÜVENLİK YAMASI (ALTER TABLE)
-    # Eğer veritabanı silinemediyse ve eski tablolar duruyorsa, eksik sütunları zorla ekler:
-    try: c.execute("ALTER TABLE posts ADD COLUMN is_requested BOOLEAN DEFAULT 0")
-    except: pass
-    
-    try: c.execute("ALTER TABLE ideas ADD COLUMN user_email TEXT")
-    except: pass
-    
-    try: c.execute("ALTER TABLE tags ADD COLUMN category TEXT")
-    except: pass
-    
-    try: c.execute("ALTER TABLE tags ADD COLUMN color TEXT")
-    except: pass
-
     conn.commit()
     conn.close()
 
@@ -71,6 +55,8 @@ class PostCreate(BaseModel):
     title: str
     content: str
     is_requested: bool = False
+    request_tag: Optional[str] = None
+    author_email: Optional[str] = None
 
 class IdeaCreate(BaseModel):
     content: str
@@ -84,6 +70,10 @@ class TagCreate(BaseModel):
     tag_name: str
     color: str
 
+class StatusUpdate(BaseModel):
+    status: str
+    category: str
+
 @app.post("/api/login")
 def login(req: LoginRequest, db: sqlite3.Connection = Depends(get_db)):
     admin_email = os.getenv("ADMIN_EMAIL")
@@ -93,8 +83,10 @@ def login(req: LoginRequest, db: sqlite3.Connection = Depends(get_db)):
 
     if admin_email and admin_password and req.email == admin_email and req.password == admin_password:
         return {"message": "Admin girişi başarılı", "role": "Admin", "email": req.email}
+    
     if student_email and student_password and req.email == student_email and req.password == student_password:
          return {"message": "Öğrenci girişi başarılı", "role": "Öğrenci", "email": req.email}
+         
     raise HTTPException(status_code=401, detail="E-posta veya şifre hatalı!")
 
 
@@ -116,8 +108,8 @@ def create_post(post: PostCreate, db: sqlite3.Connection = Depends(get_db)):
             continue
             
     cursor.execute(
-        "INSERT INTO posts (category, title, content, embedding, clone_group_id, status, is_requested) VALUES (?, ?, ?, ?, ?, 'Bekleniyor', ?)",
-        (post.category, post.title, post.content, json.dumps(new_embedding), assigned_group_id, int(post.is_requested))
+        "INSERT INTO posts (category, title, content, embedding, clone_group_id, status, is_requested, request_tag, author_email) VALUES (?, ?, ?, ?, ?, 'Bekleniyor', ?, ?, ?)",
+        (post.category, post.title, post.content, json.dumps(new_embedding), assigned_group_id, int(post.is_requested), post.request_tag, post.author_email)
     )
     new_post_id = cursor.lastrowid
     
@@ -131,13 +123,13 @@ def create_post(post: PostCreate, db: sqlite3.Connection = Depends(get_db)):
 @app.get("/api/posts")
 def get_posts(sort: str = "trend", db: sqlite3.Connection = Depends(get_db)):
     cursor = db.cursor()
-    cursor.execute("SELECT * FROM posts WHERE status != 'Reddedildi'")
+    # Tüm postları döndürüyoruz, frontend tarafında ana akışta reddedilenler gizlenecek.
+    cursor.execute("SELECT * FROM posts")
     posts_raw = cursor.fetchall()
     
     result = []
     for p in posts_raw:
         p_dict = dict(p)
-        
         cursor.execute("SELECT * FROM ideas WHERE post_id = ?", (p_dict['id'],))
         p_dict["ideas"] = [dict(i) for i in cursor.fetchall()]
         p_dict["ideas_count"] = len(p_dict["ideas"])
@@ -152,8 +144,7 @@ def get_posts(sort: str = "trend", db: sqlite3.Connection = Depends(get_db)):
             
         hours_passed = (datetime.now() - created_at).total_seconds() / 3600.0
         p_dict["trend_score"] = (p_dict["upvotes"] + 1.0) / ((hours_passed + 2.0) ** 1.5)
-        
-        p_dict["is_requested"] = bool(p_dict.get("is_requested", 0))
+        p_dict["is_requested"] = bool(p_dict["is_requested"])
         
         result.append(p_dict)
         
@@ -162,7 +153,15 @@ def get_posts(sort: str = "trend", db: sqlite3.Connection = Depends(get_db)):
     else:
         result.sort(key=lambda x: x["trend_score"], reverse=True)
         
-    return result[:30]
+    return result
+
+
+@app.put("/api/posts/{post_id}/status")
+def update_post_status(post_id: int, req: StatusUpdate, db: sqlite3.Connection = Depends(get_db)):
+    cursor = db.cursor()
+    cursor.execute("UPDATE posts SET status = ?, category = ? WHERE id = ?", (req.status, req.category, post_id))
+    db.commit()
+    return {"message": "Durum güncellendi"}
 
 
 @app.get("/api/posts/{post_id}/clones")
@@ -174,12 +173,12 @@ def get_post_clones(post_id: int, db: sqlite3.Connection = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Gönderi bulunamadı")
         
     group_id = row["clone_group_id"]
-    cursor.execute("SELECT id, category, title, content, upvotes, created_at, is_requested FROM posts WHERE clone_group_id = ? AND id != ? AND status != 'Reddedildi'", (group_id, post_id))
+    cursor.execute("SELECT id, category, title, content, upvotes, created_at, is_requested, request_tag, author_email FROM posts WHERE clone_group_id = ? AND id != ?", (group_id, post_id))
     
     clones = []
     for c in cursor.fetchall():
         c_dict = dict(c)
-        c_dict["is_requested"] = bool(c_dict.get("is_requested", 0))
+        c_dict["is_requested"] = bool(c_dict["is_requested"])
         clones.append(c_dict)
         
     return clones
@@ -211,6 +210,7 @@ def create_tag(tag: TagCreate, db: sqlite3.Connection = Depends(get_db)):
     cursor.execute("INSERT INTO tags (category, tag_name, color) VALUES (?, ?, ?)", (tag.category, tag.tag_name, tag.color))
     db.commit()
     return {"message": "Etiket oluşturuldu"}
+
 
 @app.get("/api/tags")
 def get_tags(db: sqlite3.Connection = Depends(get_db)):
