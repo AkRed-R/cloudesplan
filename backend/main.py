@@ -76,17 +76,32 @@ class StatusUpdate(BaseModel):
 
 @app.post("/api/login")
 def login(req: LoginRequest, db: sqlite3.Connection = Depends(get_db)):
-    admin_email = os.getenv("ADMIN_EMAIL")
-    admin_password = os.getenv("ADMIN_PASSWORD")
-    student_email = os.getenv("STUDENT_EMAIL")
-    student_password = os.getenv("STUDENT_PASSWORD")
-
-    if admin_email and admin_password and req.email == admin_email and req.password == admin_password:
-        return {"message": "Admin girişi başarılı", "role": "Admin", "email": req.email}
+    admins = {}
+    students = {}
     
-    if student_email and student_password and req.email == student_email and req.password == student_password:
-         return {"message": "Öğrenci girişi başarılı", "role": "Öğrenci", "email": req.email}
-         
+    # .env dosyasındaki değişkenleri dinamik olarak tarıyoruz
+    for key, value in os.environ.items():
+        # Admin hesaplarını topla
+        if key.startswith("ADMIN_") and key.endswith("_EMAIL"):
+            base_key = key.replace("_EMAIL", "")
+            admins[value] = os.getenv(f"{base_key}_PASSWORD")
+        elif key == "ADMIN_EMAIL": # Geriye dönük uyumluluk
+            admins[value] = os.getenv("ADMIN_PASSWORD")
+            
+        # Öğrenci hesaplarını topla
+        elif key.startswith("STUDENT_") and key.endswith("_EMAIL"):
+            base_key = key.replace("_EMAIL", "")
+            students[value] = os.getenv(f"{base_key}_PASSWORD")
+        elif key == "STUDENT_EMAIL": # Geriye dönük uyumluluk
+            students[value] = os.getenv("STUDENT_PASSWORD")
+
+    # Giriş kontrolleri
+    if req.email in admins and admins[req.email] == req.password:
+        return {"message": "Admin girişi başarılı", "role": "Admin", "email": req.email}
+        
+    if req.email in students and students[req.email] == req.password:
+        return {"message": "Öğrenci girişi başarılı", "role": "Öğrenci", "email": req.email}
+        
     raise HTTPException(status_code=401, detail="E-posta veya şifre hatalı!")
 
 
@@ -101,7 +116,7 @@ def create_post(post: PostCreate, db: sqlite3.Connection = Depends(get_db)):
     for ep in existing_posts:
         try:
             ep_emb = json.loads(ep["embedding"])
-            if util.cos_sim(new_embedding, ep_emb).item() > 0.80: 
+            if util.cos_sim(new_embedding, ep_emb).item() > 0.65: 
                 assigned_group_id = ep["clone_group_id"]
                 break 
         except Exception:

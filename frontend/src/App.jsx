@@ -308,7 +308,7 @@ export default function App() {
           <h1 className="text-3xl font-bold mb-2 tracking-tight" style={{ color: '#feedde' }}>GTÜ'nün Kulağı</h1>
           <div className="flex items-center w-full my-5">
             <div className="flex-grow border-t-2" style={{ borderColor: '#f9cd92' }}></div>
-            <span className="px-4 text-xs font-semibold uppercase tracking-widest text-center" style={{ color: '#feedde' }}>Herkes İçin Geribildirim</span>
+            <span className="px-4 text-xs font-semibold uppercase tracking-widest text-center" style={{ color: '#feedde' }}>Herkes İçin Geribildirim sistemi</span>
             <div className="flex-grow border-t-2" style={{ borderColor: '#f9cd92' }}></div>
           </div>
           <p className="font-medium mb-8 text-sm" style={{ color: '#feedde' }}>Söyleyecek bir şeyin mi var?</p>
