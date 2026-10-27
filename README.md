@@ -1,6 +1,6 @@
 # cloudesplan Hackathon - Ear of GTU (kolaylaştırılmış ve otonom feedback sistemi)
 
-[Demo Videosu](Buraya video linkini ekle)
+[Demo Videosu](https://drive.google.com/file/d/1PP5GoqKyjgDGOUNpuy_cgI_GWzydlYSH/view?usp=sharing)
 
 ## problem
 Çoğu öğrenciden geri bildirim alınamaması.
@@ -15,12 +15,12 @@ En yakın örnek: GTÜ muallim köy'ü su basmasına rağmen üniversite tarafı
 - Kategorilenmiş hızlı post sistemi
 - Reddetme dikkate alma ve klon içerik oto moderasyon sistemi
 -  kolaylaştırılmış geribildirim isteme özelliği (adminler için)
-- uygulama dışı haberdarlık için ai e posta üretim sistemi
+- acil durum admin pingi
 
 ## bu hackethon'u aşan, eklenebilecek sistemler
   - instagram'a otonom olarak popüler geribildirimleri post olarak atılması (mesela bazı instagram hesaplarında X (twitter) postlarını editleyip gönderi olarak paylaşılması, böyle bir instagram postundan bahsediyoruz)
-  
-  - Ani yükselen durumlarda, acil olsuğu belirlenirse, rektöre sms ile "gtü öğrencilerinin mesajı var" gibi bir bildirim gönderilmesi
+  - eposta ile uygulama dışı haberdar mailleri gönderilmesi
+  - Acil durum pinginin SMS ile gönderilmesi
 
 ## Çalıştırma Adımları
 Projeyi çalıştırmak için bilgisayarınızda Docker ve Docker Compose kurulu olmalıdır.
