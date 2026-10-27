@@ -40,7 +40,9 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS posts (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, title TEXT, content TEXT, embedding TEXT, clone_group_id INTEGER, status TEXT DEFAULT 'Bekleniyor', is_requested BOOLEAN DEFAULT 0, request_tag TEXT, author_email TEXT, upvotes INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)''')
     c.execute('''CREATE TABLE IF NOT EXISTS ideas (id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER, user_email TEXT, content TEXT, upvotes INTEGER DEFAULT 0)''')
     c.execute('''CREATE TABLE IF NOT EXISTS tags (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, tag_name TEXT, color TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS post_upvotes (id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER, user_email TEXT, UNIQUE(post_id, user_email))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS post_upvotes (id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER, user_email TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(post_id, user_email))''')
+    c.execute('''CREATE TABLE IF NOT EXISTS alerts (id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER, message TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(post_id))''')
+    
     conn.commit()
     conn.close()
 
@@ -79,23 +81,19 @@ def login(req: LoginRequest, db: sqlite3.Connection = Depends(get_db)):
     admins = {}
     students = {}
     
-    # .env dosyasındaki değişkenleri dinamik olarak tarıyoruz
     for key, value in os.environ.items():
-        # Admin hesaplarını topla
         if key.startswith("ADMIN_") and key.endswith("_EMAIL"):
             base_key = key.replace("_EMAIL", "")
             admins[value] = os.getenv(f"{base_key}_PASSWORD")
-        elif key == "ADMIN_EMAIL": # Geriye dönük uyumluluk
+        elif key == "ADMIN_EMAIL":
             admins[value] = os.getenv("ADMIN_PASSWORD")
             
-        # Öğrenci hesaplarını topla
         elif key.startswith("STUDENT_") and key.endswith("_EMAIL"):
             base_key = key.replace("_EMAIL", "")
             students[value] = os.getenv(f"{base_key}_PASSWORD")
-        elif key == "STUDENT_EMAIL": # Geriye dönük uyumluluk
+        elif key == "STUDENT_EMAIL":
             students[value] = os.getenv("STUDENT_PASSWORD")
 
-    # Giriş kontrolleri
     if req.email in admins and admins[req.email] == req.password:
         return {"message": "Admin girişi başarılı", "role": "Admin", "email": req.email}
         
@@ -116,7 +114,7 @@ def create_post(post: PostCreate, db: sqlite3.Connection = Depends(get_db)):
     for ep in existing_posts:
         try:
             ep_emb = json.loads(ep["embedding"])
-            if util.cos_sim(new_embedding, ep_emb).item() > 0.65: 
+            if util.cos_sim(new_embedding, ep_emb).item() > 0.80: 
                 assigned_group_id = ep["clone_group_id"]
                 break 
         except Exception:
@@ -138,7 +136,6 @@ def create_post(post: PostCreate, db: sqlite3.Connection = Depends(get_db)):
 @app.get("/api/posts")
 def get_posts(sort: str = "trend", db: sqlite3.Connection = Depends(get_db)):
     cursor = db.cursor()
-    # Tüm postları döndürüyoruz, frontend tarafında ana akışta reddedilenler gizlenecek.
     cursor.execute("SELECT * FROM posts")
     posts_raw = cursor.fetchall()
     
@@ -174,9 +171,16 @@ def get_posts(sort: str = "trend", db: sqlite3.Connection = Depends(get_db)):
 @app.put("/api/posts/{post_id}/status")
 def update_post_status(post_id: int, req: StatusUpdate, db: sqlite3.Connection = Depends(get_db)):
     cursor = db.cursor()
+    
+    # 1. Postun kategorisini ve durumunu güncelle
     cursor.execute("UPDATE posts SET status = ?, category = ? WHERE id = ?", (req.status, req.category, post_id))
+    
+    # 2. YENİ: Post artık "Dikkate Alındı" veya "Reddedildi" ise acil bildirimini sil
+    if req.status in ["Reddedildi", "Dikkate Alındı"]:
+        cursor.execute("DELETE FROM alerts WHERE post_id = ?", (post_id,))
+        
     db.commit()
-    return {"message": "Durum güncellendi"}
+    return {"message": "Durum güncellendi ve bildirimler temizlendi"}
 
 
 @app.get("/api/posts/{post_id}/clones")
@@ -205,6 +209,13 @@ def upvote_post(post_id: int, req: UpvoteRequest, db: sqlite3.Connection = Depen
     try:
         cursor.execute("INSERT INTO post_upvotes (post_id, user_email) VALUES (?, ?)", (post_id, req.email))
         cursor.execute("UPDATE posts SET upvotes = upvotes + 1 WHERE id = ?", (post_id,))
+        
+        cursor.execute("SELECT COUNT(*) as cnt FROM post_upvotes WHERE post_id = ? AND created_at >= datetime('now', '-30 seconds')", (post_id,))
+        recent_upvotes = cursor.fetchone()["cnt"]
+        
+        if recent_upvotes >= 3:
+            cursor.execute("INSERT OR IGNORE INTO alerts (post_id, message) VALUES (?, ?)", (post_id, "Acil, yükselen bildirim."))
+            
         db.commit()
         return {"message": "+1 verildi"}
     except sqlite3.IntegrityError:
@@ -232,3 +243,10 @@ def get_tags(db: sqlite3.Connection = Depends(get_db)):
     cursor = db.cursor()
     cursor.execute("SELECT * FROM tags")
     return [dict(t) for t in cursor.fetchall()]
+
+
+@app.get("/api/alerts")
+def get_alerts(db: sqlite3.Connection = Depends(get_db)):
+    cursor = db.cursor()
+    cursor.execute("SELECT a.id, a.message, p.title FROM alerts a JOIN posts p ON a.post_id = p.id ORDER BY a.created_at DESC")
+    return [dict(row) for row in cursor.fetchall()]

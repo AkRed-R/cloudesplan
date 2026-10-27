@@ -30,6 +30,7 @@ export default function App() {
   const [isFetchingPosts, setIsFetchingPosts] = useState(false);
   const [adminTags, setAdminTags] = useState([]);
   
+  const [adminAlerts, setAdminAlerts] = useState([]);
   const [votedPosts, setVotedPosts] = useState(new Set()); 
 
   const [viewingClonesPostId, setViewingClonesPostId] = useState(null);
@@ -52,6 +53,14 @@ export default function App() {
     { name: "Dikkate Alınanlar", type: "accepted" },
     { name: "Reddedilenler", type: "rejected" }
   ];
+
+  // YENİ EKLENEN ÇIKIŞ FONKSİYONU
+  const handleLogout = () => {
+    setCurrentScreen('selection');
+    setUserEmail('');
+    setUserRole('');
+    setVotedPosts(new Set()); // Çıkış yapınca +1'leri sıfırla ki diğer öğrenci oy verebilsin!
+  };
 
   const fetchPosts = async (sortType) => {
     setIsFetchingPosts(true);
@@ -80,6 +89,24 @@ export default function App() {
       fetchTags();
     }
   }, [currentScreen, activeTab]);
+
+  useEffect(() => {
+    let interval;
+    if (currentScreen === 'home' && userRole === 'Admin') {
+      const fetchAlerts = async () => {
+        try {
+          const res = await fetch(`${API_BASE_URL}/alerts`);
+          if (res.ok) setAdminAlerts(await res.json());
+        } catch (err) {
+          console.error("Bildirimler çekilemedi:", err);
+        }
+      };
+      
+      fetchAlerts(); 
+      interval = setInterval(fetchAlerts, 5000); 
+    }
+    return () => { if (interval) clearInterval(interval); };
+  }, [currentScreen, userRole]);
 
   const handleLoginSubmit = async (e, role, email, password) => {
     e.preventDefault();
@@ -168,7 +195,7 @@ export default function App() {
 
   const handleUpvote = async (postId) => {
     if (votedPosts.has(postId)) {
-      alert("Bu gönderiye zaten +1 verdiniz!");
+      alert("Bu oturumda zaten +1 verdiniz!");
       return;
     }
     try {
@@ -308,7 +335,7 @@ export default function App() {
           <h1 className="text-3xl font-bold mb-2 tracking-tight" style={{ color: '#feedde' }}>GTÜ'nün Kulağı</h1>
           <div className="flex items-center w-full my-5">
             <div className="flex-grow border-t-2" style={{ borderColor: '#f9cd92' }}></div>
-            <span className="px-4 text-xs font-semibold uppercase tracking-widest text-center" style={{ color: '#feedde' }}>Herkes İçin Geribildirim sistemi</span>
+            <span className="px-4 text-xs font-semibold uppercase tracking-widest text-center" style={{ color: '#feedde' }}>Herkes İçin Geribildirim</span>
             <div className="flex-grow border-t-2" style={{ borderColor: '#f9cd92' }}></div>
           </div>
           <p className="font-medium mb-8 text-sm" style={{ color: '#feedde' }}>Söyleyecek bir şeyin mi var?</p>
@@ -520,7 +547,8 @@ export default function App() {
           <button onClick={() => { setActivePage('settings'); setSelectedCategory(null); }} className={`flex items-center gap-4 px-5 py-4 rounded-2xl font-bold transition-colors ${activePage === 'settings' ? 'shadow-md' : 'hover:bg-white/10'}`} style={{ backgroundColor: activePage === 'settings' ? '#f9cd92' : 'transparent', color: activePage === 'settings' ? '#161032' : '#feedde' }}>
             <Settings size={22} /><span>Ayarlar</span>
           </button>
-          <button onClick={() => { setCurrentScreen('selection'); setUserEmail(''); }} className="flex items-center gap-3 px-5 py-4 rounded-2xl font-semibold transition-colors hover:bg-white/10 w-full opacity-80 hover:opacity-100" style={{ color: '#feedde' }}>
+          {/* ÇIKIŞ BUTONU ARTIK handleLogout FONKSİYONUNU ÇAĞIRIYOR */}
+          <button onClick={handleLogout} className="flex items-center gap-3 px-5 py-4 rounded-2xl font-semibold transition-colors hover:bg-white/10 w-full opacity-80 hover:opacity-100" style={{ color: '#feedde' }}>
             <LogOut size={22} /><span>Çıkış Yap</span>
           </button>
         </div>
@@ -531,6 +559,20 @@ export default function App() {
           
           {activePage === 'home' && (
             <>
+              {userRole === 'Admin' && adminAlerts.length > 0 && (
+                <div className="mb-6 space-y-4">
+                  {adminAlerts.map(alert => (
+                    <div key={alert.id} className="flex items-center gap-4 p-5 rounded-2xl border-2 shadow-sm" style={{ backgroundColor: '#fee2e2', borderColor: '#ef4444', color: '#7f1d1d' }}>
+                      <ShieldAlert size={32} />
+                      <div>
+                        <h4 className="font-extrabold text-lg uppercase tracking-wide">{alert.message}</h4>
+                        <p className="font-medium text-sm">Gönderi: {alert.title}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="flex justify-between items-center w-full mb-10">
                 <button onClick={() => setActiveTab('trend')} className={`flex-1 py-4 text-center rounded-3xl font-extrabold text-lg transition-all ${activeTab === 'trend' ? 'shadow-lg scale-105' : 'opacity-60 hover:opacity-100'}`} style={{ backgroundColor: activeTab === 'trend' ? '#161032' : 'transparent', color: activeTab === 'trend' ? '#f9cd92' : '#161032' }}>
                   🔥 Şuan İstek Çok
